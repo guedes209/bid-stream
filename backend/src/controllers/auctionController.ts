@@ -5,26 +5,13 @@ import { aiQueue } from '../queues/aiQueue';
 
 export const createAuction = async (req: Request, res: Response) => {
   try {
-    // Conversões e Tipagens explícitas
     const sellerId = req.body.sellerId as string;
     const title = req.body.title as string;
     const description = req.body.description as string;
     const startingPrice = Number(req.body.startingPrice);
     const endsAt = new Date(req.body.endsAt as string);
     
-    // HACK DE DESENVOLVIMENTO: Auto-criar o vendedor se ele não existir (Evita erro P2003 de Chave Estrangeira)
-    const userExists = await prisma.user.findUnique({ where: { id: sellerId } });
-    if (!userExists) {
-      await prisma.user.create({
-        data: {
-          id: sellerId,
-          name: 'Vendedor VIP',
-          email: `${sellerId}@exemplo.com`,
-          password: 'senha-criptografada-fake'
-        }
-      });
-    }
-    
+    // O banco validará a existência do SellerId via FK nativamente. Zero hacks.
     const auction = await prisma.auction.create({
       data: {
         sellerId,
@@ -37,7 +24,10 @@ export const createAuction = async (req: Request, res: Response) => {
     });
     
     return res.status(201).json(auction);
-  } catch (error: unknown) {
+  } catch (error: any) {
+    if (error?.code === 'P2003') {
+       return res.status(400).json({ error: 'Usuário vendedor não existe (Autenticação inválida).' });
+    }
     console.error(error);
     return res.status(500).json({ error: 'Erro ao criar leilão' });
   }
@@ -62,68 +52,35 @@ export const placeBid = async (req: Request, res: Response) => {
   const amount = Number(req.body.amount);
 
   try {
-    // HACK DE DESENVOLVIMENTO: Auto-criar o comprador se ele não existir (Evita erro P2003 de Chave Estrangeira)
-    const bidderExists = await prisma.user.findUnique({ where: { id: bidderId } });
-    if (!bidderExists) {
-      await prisma.user.create({
-        data: {
-          id: bidderId,
-          name: 'Comprador Anônimo',
-          email: `${bidderId}@exemplo.com`,
-          password: 'senha-criptografada-fake'
-        }
-      });
-    }
-
-    // 1. Busca o leilão atual
     const auction = await prisma.auction.findUnique({
       where: { id: auctionId }
     });
 
-    if (!auction) {
-      return res.status(404).json({ error: 'Leilão não encontrado' });
-    }
-    
-    if (auction.status !== 'ACTIVE' || new Date() > auction.endsAt) {
-      return res.status(400).json({ error: 'Este leilão já foi encerrado' });
-    }
+    if (!auction) return res.status(404).json({ error: 'Leilão não encontrado' });
+    if (auction.status !== 'ACTIVE' || new Date() > auction.endsAt) return res.status(400).json({ error: 'Este leilão já foi encerrado' });
+    if (amount <= auction.currentPrice) return res.status(400).json({ error: 'O lance deve ser obrigatoriamente maior que o preço atual.' });
 
-    if (amount <= auction.currentPrice) {
-      return res.status(400).json({ error: 'O lance deve ser obrigatoriamente maior que o preço atual.' });
-    }
-
-    // 2. Anti-Sniper: Se faltam menos de 30 segundos, adiciona 30s extras
     const timeRemaining = auction.endsAt.getTime() - new Date().getTime();
     let newEndsAt = auction.endsAt;
     if (timeRemaining < 30000) {
       newEndsAt = new Date(new Date().getTime() + 30000);
     }
 
-    // 3. Optimistic Locking: Tenta atualizar verificando se a 'version' ainda é a mesma
     const updatedAuction = await prisma.auction.update({
-      where: { 
-        id: auctionId, 
-        version: auction.version // A mágica acontece aqui!
-      },
-      data: { 
-        currentPrice: amount, 
-        endsAt: newEndsAt, 
-        version: { increment: 1 } 
-      }
+      where: { id: auctionId, version: auction.version },
+      data: { currentPrice: amount, endsAt: newEndsAt, version: { increment: 1 } }
     });
 
-    // 4. Registra o lance
+    // Se o Bidder não existir no banco, vai falhar com P2003 e cair no catch
     const bid = await prisma.bid.create({
       data: { auctionId, bidderId, amount },
       include: { bidder: { select: { name: true } } }
     });
 
-    // 5. Emite via WebSocket
     if (io) {
       io.to(`auction_${auctionId}`).emit('newBid', { auction: updatedAuction, bid });
     }
 
-    // 6. Joga na fila do BullMQ
     await aiQueue.add('generate-hype', { 
       auctionId, 
       currentBid: amount, 
@@ -132,11 +89,9 @@ export const placeBid = async (req: Request, res: Response) => {
 
     return res.status(200).json({ success: true, bid, auction: updatedAuction });
   } catch (error: any) {
-    if (error?.code === 'P2025') {
-      return res.status(409).json({ 
-        error: 'Conflito de concorrência: Um lance maior foi computado no mesmo milissegundo. Atualize e tente novamente.' 
-      });
-    }
+    if (error?.code === 'P2025') return res.status(409).json({ error: 'Conflito de concorrência: Um lance maior foi computado no mesmo milissegundo. Atualize e tente novamente.' });
+    if (error?.code === 'P2003') return res.status(400).json({ error: 'Usuário comprador não encontrado (Sessão inválida).' });
+    
     console.error(error);
     return res.status(500).json({ error: 'Erro interno ao processar o lance' });
   }

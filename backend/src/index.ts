@@ -3,6 +3,7 @@ import cors from 'cors';
 import dotenv from 'dotenv';
 import { createServer } from 'http';
 import { initSocket } from './socket';
+import authRoutes from './routes/authRoutes';
 import auctionRoutes from './routes/auctionRoutes';
 import aiRoutes from './routes/aiRoutes';
 
@@ -21,6 +22,7 @@ app.get('/health', (req, res) => {
   res.json({ status: 'ok', service: 'BidStream API' });
 });
 
+app.use('/api/auth', authRoutes);
 app.use('/api/auctions', auctionRoutes);
 app.use('/api/ai', aiRoutes);
 
