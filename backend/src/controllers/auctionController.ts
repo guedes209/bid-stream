@@ -8,6 +8,7 @@ export const createAuction = async (req: Request, res: Response) => {
     const sellerId = req.body.sellerId as string;
     const title = req.body.title as string;
     const description = req.body.description as string;
+    const imageUrl = req.body.imageUrl as string;
     const startingPrice = Number(req.body.startingPrice);
     const endsAt = new Date(req.body.endsAt as string);
     
@@ -17,6 +18,7 @@ export const createAuction = async (req: Request, res: Response) => {
         sellerId,
         title,
         description,
+        imageUrl,
         startingPrice,
         currentPrice: startingPrice,
         endsAt,

@@ -5,7 +5,7 @@ export const generateListingInfo = async (base64Image: string, mimeType: string,
     if (!apiKey) throw new Error('GEMINI_API_KEY is not set');
 
     const genAI = new GoogleGenerativeAI(apiKey);
-    const model = genAI.getGenerativeModel({ model: "gemini-3.5-flash" });
+    const model = genAI.getGenerativeModel({ model: "gemini-3.5-flash-lite" });
     
     const prompt = `Você é um especialista em leilões e copywriting.
 Analise a imagem deste item que será leiloado.
@@ -26,7 +26,7 @@ Responda ESTRITAMENTE neste formato JSON (sem blocos de markdown de formatação
 
         // Tempo máximo de tolerância para gerar o lote: 15 segundos
         const timeoutPromise = new Promise((_, reject) => 
-            setTimeout(() => reject(new Error('TIMEOUT_API')), 15000)
+            setTimeout(() => reject(new Error('TIMEOUT_API')), 60000)
         );
 
         const result = await Promise.race([
@@ -51,7 +51,7 @@ export const generateHypeMessage = async (currentBid: number, bidderName: string
     if (!apiKey) throw new Error('GEMINI_API_KEY is not set');
 
     const genAI = new GoogleGenerativeAI(apiKey);
-    const model = genAI.getGenerativeModel({ model: "gemini-3.5-flash" });
+    const model = genAI.getGenerativeModel({ model: "gemini-3.5-flash-lite" });
 
     const prompt = `Você é um leiloeiro virtual carismático, empolgado e enérgico (mas seja super conciso, use no máximo 1 frase curta). 
 Um lance acabou de ser feito por ${bidderName} no valor de R$${currentBid}. 

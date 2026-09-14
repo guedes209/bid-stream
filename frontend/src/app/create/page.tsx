@@ -87,6 +87,7 @@ export default function CreateAuctionPage() {
           sellerId: currentUser.id,
           title,
           description,
+          imageUrl: imagePreview,
           startingPrice: Number(startingPrice),
           endsAt: new Date(endsAt).toISOString()
         })

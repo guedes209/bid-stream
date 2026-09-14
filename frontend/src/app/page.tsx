@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Clock, Gavel, User, LogOut } from 'lucide-react';
+import { Clock, Gavel, User, LogOut, Plus } from 'lucide-react';
 import { format } from 'date-fns';
 
 const API_URL = 'http://localhost:3001';
@@ -11,6 +11,7 @@ interface Auction {
   id: string;
   title: string;
   description: string;
+  imageUrl?: string;
   currentPrice: number;
   endsAt: string;
 }
@@ -52,14 +53,22 @@ export default function DashboardPage() {
               Salão de Leilões
             </h1>
           </div>
-          <div className="flex items-center gap-6 bg-white border border-[#E5E5E5] px-6 py-3 shadow-sm">
-            <span className="text-[#666] flex items-center gap-2 text-sm font-medium">
-              <User size={16} className="text-[#D4AF37]" /> Bem-vindo, {user.name.split(' ')[0]}
-            </span>
-            <div className="w-[1px] h-4 bg-[#E5E5E5]"></div>
-            <button onClick={handleLogout} className="text-xs uppercase tracking-widest font-bold text-[#999] hover:text-[#111] transition-colors flex items-center gap-1">
-              <LogOut size={14}/> Sair
+          <div className="flex flex-col sm:flex-row items-center gap-4">
+            <button 
+              onClick={() => router.push('/create')} 
+              className="bg-[#D4AF37] hover:bg-[#E5C158] text-[#111] px-6 py-3 uppercase tracking-widest text-xs font-bold transition-colors shadow-sm flex items-center gap-2"
+            >
+              <Plus size={16}/> Anunciar Peça
             </button>
+            <div className="flex items-center gap-6 bg-white border border-[#E5E5E5] px-6 py-3 shadow-sm">
+              <span className="text-[#666] flex items-center gap-2 text-sm font-medium">
+                <User size={16} className="text-[#D4AF37]" /> Bem-vindo, {user.name.split(' ')[0]}
+              </span>
+              <div className="w-[1px] h-4 bg-[#E5E5E5]"></div>
+              <button onClick={handleLogout} className="text-xs uppercase tracking-widest font-bold text-[#999] hover:text-[#111] transition-colors flex items-center gap-1">
+                <LogOut size={14}/> Sair
+              </button>
+            </div>
           </div>
         </header>
 
@@ -74,11 +83,11 @@ export default function DashboardPage() {
                 
                 {/* Imagens Dinâmicas com base no título */}
                 <img 
-                  src={auction.title.includes('Rolex') 
+                  src={auction.imageUrl || (auction.title.includes('Rolex') 
                     ? 'https://images.unsplash.com/photo-1523170335258-f5ed11844a49?q=80&w=600&auto=format&fit=crop' 
                     : auction.title.includes('MacBook')
                     ? 'https://images.unsplash.com/photo-1517336714731-489689fd1ca8?q=80&w=600&auto=format&fit=crop'
-                    : 'https://images.unsplash.com/photo-1579783902614-a3fb3927b6a5?q=80&w=600&auto=format&fit=crop'
+                    : 'https://images.unsplash.com/photo-1579783902614-a3fb3927b6a5?q=80&w=600&auto=format&fit=crop')
                   }
                   alt={auction.title}
                   className="object-contain w-full h-full mix-blend-multiply group-hover:scale-110 transition-transform duration-700"

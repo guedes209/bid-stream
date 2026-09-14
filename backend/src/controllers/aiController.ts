@@ -16,7 +16,7 @@ export const analyzeImage = async (req: Request, res: Response) => {
         console.log(`[AI Controller] Analisando imagem (${actualMimeType}) para rascunho de leilão...`);
         
         const listingData = await generateListingInfo(base64Data, actualMimeType, hint);
-        
+
         return res.status(200).json(listingData);
     } catch (error: any) {
         console.error('[AI Controller] Falha ao processar análise visual:', error);

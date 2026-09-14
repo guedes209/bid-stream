@@ -13,6 +13,7 @@ interface Auction {
   id: string;
   title: string;
   description: string;
+  imageUrl?: string;
   currentPrice: number;
   startingPrice: number;
   endsAt: string;
@@ -221,11 +222,11 @@ export default function AuctionRoomPage() {
           <div className="aspect-[4/3] bg-white border border-[#E5E5E5] p-8 flex items-center justify-center shadow-sm relative overflow-hidden shrink-0">
             <div className="absolute inset-0 bg-gradient-to-tr from-transparent via-transparent to-[#F9F9F9]"></div>
             <img 
-              src={auction.title.includes('Rolex') 
+              src={auction.imageUrl || (auction.title.includes('Rolex') 
                 ? 'https://images.unsplash.com/photo-1523170335258-f5ed11844a49?q=80&w=1000&auto=format&fit=crop' 
                 : auction.title.includes('MacBook')
                 ? 'https://images.unsplash.com/photo-1517336714731-489689fd1ca8?q=80&w=1000&auto=format&fit=crop'
-                : 'https://images.unsplash.com/photo-1579783902614-a3fb3927b6a5?q=80&w=1000&auto=format&fit=crop'
+                : 'https://images.unsplash.com/photo-1579783902614-a3fb3927b6a5?q=80&w=1000&auto=format&fit=crop')
               }
               alt="Item do Leilão" 
               className="w-full h-full object-contain mix-blend-multiply drop-shadow-2xl z-10 hover:scale-105 transition-transform duration-700"
