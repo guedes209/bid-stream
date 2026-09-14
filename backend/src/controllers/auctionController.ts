@@ -36,7 +36,13 @@ export const createAuction = async (req: Request, res: Response) => {
 export const getAuctions = async (req: Request, res: Response) => {
   try {
     const auctions = await prisma.auction.findMany({
-      include: { seller: { select: { name: true, email: true } } },
+      include: { 
+        seller: { select: { name: true, email: true } },
+        bids: {
+          include: { bidder: { select: { name: true } } },
+          orderBy: { createdAt: 'asc' }
+        }
+      },
       orderBy: { endsAt: 'asc' }
     });
     return res.status(200).json(auctions);

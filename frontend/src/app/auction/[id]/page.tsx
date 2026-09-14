@@ -16,6 +16,7 @@ interface Auction {
   currentPrice: number;
   startingPrice: number;
   endsAt: string;
+  bids?: any[];
 }
 
 interface BidEvent {
@@ -40,17 +41,17 @@ export default function AuctionRoomPage() {
   const [chartData, setChartData] = useState<ChartData[]>([]);
   const [events, setEvents] = useState<BidEvent[]>([]);
   const [bidAmount, setBidAmount] = useState<string>('');
-  const [error, setError] = useState<string>('');
+  
+  const [fatalError, setFatalError] = useState<string>('');
+  const [bidError, setBidError] = useState<string>('');
   
   const socketRef = useRef<Socket | null>(null);
   const chatEndRef = useRef<HTMLDivElement>(null);
 
-  // Scroll automático do chat
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [events]);
 
-  // Carrega Autenticação e Leilão Dinâmico
   useEffect(() => {
     const stored = localStorage.getItem('user');
     if (!stored) {
@@ -61,70 +62,108 @@ export default function AuctionRoomPage() {
 
     if (!id) return;
 
+    let socket: Socket;
+
     const fetchAuctionData = async () => {
       try {
         const res = await fetch(`${API_URL}/api/auctions`);
         const data = await res.json();
-        
-        // Encontra o leilão exato pela rota dinâmica
         const currentAuction = data.find((a: any) => a.id === id);
         
         if (currentAuction) {
           setAuction(currentAuction);
-          setChartData([{ time: new Date().toLocaleTimeString(), price: currentAuction.startingPrice }]);
+          
+          // PHASE 2: History Hydration (Gráfico e Chat)
+          const historyBids = currentAuction.bids || [];
+          const historyEvents = historyBids.map((b: any) => ({
+            id: b.id,
+            message: `Lance registrado: R$ ${b.amount.toLocaleString('pt-BR')} (${b.bidder.name})`,
+            timestamp: new Date(b.createdAt),
+            isAi: false
+          }));
+
+          const initialChart = [{ time: 'Início', price: currentAuction.startingPrice }];
+          historyBids.forEach((b: any) => {
+            initialChart.push({
+              time: new Date(b.createdAt).toLocaleTimeString(),
+              price: b.amount
+            });
+          });
+
+          setEvents(historyEvents);
+          setChartData(initialChart.slice(-20)); // Limita aos últimos 20 pontos
           
           // Setup WebSocket
-          const socket = io(API_URL);
+          socket = io(API_URL);
           socketRef.current = socket;
-          
           socket.emit('joinAuction', currentAuction.id);
           
-          socket.on('newBid', (payload) => {
+          const onNewBid = (payload: any) => {
             setAuction(payload.auction);
-            setChartData(prev => [...prev.slice(-10), { 
+            
+            setChartData(prev => [...prev.slice(-19), { 
               time: new Date().toLocaleTimeString(), 
               price: payload.auction.currentPrice 
             }]);
-            setEvents(prev => [...prev, {
-              id: Math.random().toString(),
-              message: `Lance registrado: R$ ${payload.bid.amount.toLocaleString('pt-BR')} (${payload.bid.bidder.name})`,
-              timestamp: new Date(),
-              isAi: false
-            }]);
-          });
+            
+            setEvents(prev => {
+              // PHASE 2: Strict Deduplication baseada em IDs reais
+              if (prev.some(ev => ev.id === payload.bid.id)) return prev;
+              
+              return [...prev, {
+                id: payload.bid.id,
+                message: `Lance registrado: R$ ${payload.bid.amount.toLocaleString('pt-BR')} (${payload.bid.bidder.name})`,
+                timestamp: new Date(),
+                isAi: false
+              }];
+            });
+          };
 
-          socket.on('auctioneerMessage', (payload) => {
-            setEvents(prev => [...prev, {
-              id: Math.random().toString(),
-              message: payload.message,
-              timestamp: new Date(payload.timestamp),
-              isAi: true
-            }]);
-          });
+          const onAuctioneerMessage = (payload: any) => {
+            setEvents(prev => {
+              // O AI Payload não tem ID de banco, então criamos um composite key estrito
+              const aiId = `ai-${payload.timestamp}-${payload.message.substring(0,10)}`;
+              if (prev.some(ev => ev.id === aiId)) return prev;
+
+              return [...prev, {
+                id: aiId,
+                message: payload.message,
+                timestamp: new Date(payload.timestamp),
+                isAi: true
+              }];
+            });
+          };
+
+          socket.on('newBid', onNewBid);
+          socket.on('auctioneerMessage', onAuctioneerMessage);
 
         } else {
-          setError("Leilão não encontrado ou encerrado.");
+          setFatalError("Leilão não encontrado ou encerrado.");
         }
       } catch (err) {
-        console.error(err);
-        setError("Erro ao conectar com a API.");
+        setFatalError("Erro ao conectar com a API Backend.");
       }
     };
+    
     fetchAuctionData();
 
     return () => {
-      socketRef.current?.disconnect();
+      if (socket) {
+        socket.removeAllListeners('newBid');
+        socket.removeAllListeners('auctioneerMessage');
+        socket.disconnect();
+      }
     };
   }, [id, router]);
 
   const handleBid = async (e: React.FormEvent) => {
     e.preventDefault();
-    setError('');
+    setBidError('');
     if (!auction || !currentUser) return;
     
     const amount = Number(bidAmount);
     if (amount <= auction.currentPrice) {
-      setError('O lance deve ser maior que o preço atual.');
+      setBidError('O lance deve ser maior que o preço atual.');
       return;
     }
 
@@ -132,27 +171,26 @@ export default function AuctionRoomPage() {
       const res = await fetch(`${API_URL}/api/auctions/${auction.id}/bids`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          bidderId: currentUser.id, // O lance agora é rastreado para o seu usuário logado!
-          amount: amount 
-        })
+        body: JSON.stringify({ bidderId: currentUser.id, amount: amount })
       });
       
       if (!res.ok) {
         const errData = await res.json();
-        setError(errData.error || 'Erro ao processar lance.');
+        setBidError(errData.error || 'Erro ao processar lance.');
+        return;
       }
       setBidAmount('');
     } catch (err) {
-      setError('Falha de conexão.');
+      setBidError('Falha de conexão com o servidor.');
     }
   };
 
-  if (error) {
+  if (fatalError) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center bg-[#FAF9F6] gap-6 px-4">
-        <p className="text-xl text-[#111111] font-[family-name:var(--font-playfair)]">{error}</p>
-        <button onClick={() => router.push('/')} className="text-[#D4AF37] uppercase tracking-widest font-bold underline flex items-center gap-2">
+        <AlertCircle size={48} className="text-red-500 mb-4" />
+        <p className="text-xl text-[#111111] font-[family-name:var(--font-playfair)]">{fatalError}</p>
+        <button onClick={() => router.push('/')} className="text-[#D4AF37] uppercase tracking-widest font-bold underline flex items-center gap-2 hover:text-[#111] transition-colors">
            <ArrowLeft size={16}/> Voltar ao Dashboard
         </button>
       </div>
@@ -239,11 +277,16 @@ export default function AuctionRoomPage() {
                   className="w-full bg-[#1A1A1A] border border-[#333] text-white px-12 py-4 rounded-sm focus:outline-none focus:border-[#D4AF37] transition-all text-xl placeholder:text-[#555]"
                 />
               </div>
-              <button type="submit" className="bg-[#D4AF37] hover:bg-[#E5C158] text-[#111111] px-10 py-4 font-bold tracking-widest uppercase transition-colors rounded-sm flex items-center gap-2 shadow-[0_0_15px_rgba(212,175,55,0.4)]">
+              <button type="submit" className="bg-[#D4AF37] hover:bg-[#E5C158] text-[#111111] px-10 py-4 font-bold tracking-widest uppercase transition-colors rounded-sm flex items-center gap-2 shadow-[0_0_15px_rgba(212,175,55,0.4)] hover:shadow-[0_0_25px_rgba(212,175,55,0.6)]">
                 <Gavel size={20} /> Enviar Lance
               </button>
             </form>
-            {error && <p className="text-red-400 mt-4 flex items-center gap-2 relative z-10 text-sm bg-red-900/20 p-2 border border-red-900/50"><AlertCircle size={16}/> {error}</p>}
+            
+            {bidError && (
+              <p className="text-red-400 mt-4 flex items-center gap-2 relative z-10 text-sm bg-red-900/20 p-3 border border-red-900/50 animate-in fade-in slide-in-from-top-1">
+                <AlertCircle size={16}/> {bidError}
+              </p>
+            )}
           </div>
         </div>
 
@@ -306,4 +349,3 @@ export default function AuctionRoomPage() {
     </div>
   );
 }
-
