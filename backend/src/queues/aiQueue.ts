@@ -1,6 +1,7 @@
 import { Queue, Worker, Job } from 'bullmq';
 import { redisConnection } from '../config/redis';
 import { io } from '../socket';
+import { generateHypeMessage } from '../services/aiService';
 
 const QUEUE_NAME = 'ai-auctioneer-queue';
 
@@ -13,27 +14,31 @@ export const aiQueue = new Queue(QUEUE_NAME, {
 export const aiWorker = new Worker(QUEUE_NAME, async (job: Job) => {
     const { auctionId, currentBid, bidderName } = job.data;
     
-    console.log(`[BullMQ] Processando AI Bot para o lance no leilão ${auctionId}...`);
+    console.log(`[BullMQ] Processando AI Bot para o lance de ${bidderName}...`);
     
-    // Na Task 3.5 vamos acionar a generateListingInfo (Gemini) aqui dentro!
-    const fakeAIMessage = `Wow! Recebemos um lance incrível de R$${currentBid} do(a) ${bidderName}. Quem dá mais?`;
+    try {
+        // Pede para o Gemini criar a frase criativa
+        const aiMessage = await generateHypeMessage(currentBid, bidderName);
 
-    // Emite a mensagem direto para quem está conectado na sala, sem depender de requisição HTTP
-    if (io) {
-        io.to(`auction_${auctionId}`).emit('auctioneerMessage', {
-            message: fakeAIMessage,
-            timestamp: new Date()
-        });
+        // Dispara para o WebSocket
+        if (io) {
+            io.to(`auction_${auctionId}`).emit('auctioneerMessage', {
+                message: aiMessage,
+                timestamp: new Date()
+            });
+        }
+    } catch (error) {
+        console.error('[BullMQ] Erro ao gerar fala da IA:', error);
+        throw error;
     }
     
     return { success: true };
 }, { connection: redisConnection });
 
 aiWorker.on('completed', (job) => {
-    console.log(`[BullMQ] Job ${job.id} finalizado e mensagem disparada!`);
+    console.log(`[BullMQ] Job ${job.id} finalizado e mensagem do Bot disparada!`);
 });
 
 aiWorker.on('failed', (job, err) => {
     console.error(`[BullMQ] Falha no Job:`, err);
 });
-
