@@ -5,14 +5,26 @@ import { aiQueue } from '../queues/aiQueue';
 
 export const createAuction = async (req: Request, res: Response) => {
   try {
-    // Conversões e Tipagens explícitas para garantir que o TypeScript valide os dados pro Prisma
+    // Conversões e Tipagens explícitas
     const sellerId = req.body.sellerId as string;
     const title = req.body.title as string;
     const description = req.body.description as string;
     const startingPrice = Number(req.body.startingPrice);
     const endsAt = new Date(req.body.endsAt as string);
     
-    // Obs: Em produção, sellerId vem do token JWT.
+    // HACK DE DESENVOLVIMENTO: Auto-criar o vendedor se ele não existir (Evita erro P2003 de Chave Estrangeira)
+    const userExists = await prisma.user.findUnique({ where: { id: sellerId } });
+    if (!userExists) {
+      await prisma.user.create({
+        data: {
+          id: sellerId,
+          name: 'Vendedor VIP',
+          email: `${sellerId}@exemplo.com`,
+          password: 'senha-criptografada-fake'
+        }
+      });
+    }
+    
     const auction = await prisma.auction.create({
       data: {
         sellerId,
@@ -45,12 +57,24 @@ export const getAuctions = async (req: Request, res: Response) => {
 };
 
 export const placeBid = async (req: Request, res: Response) => {
-  // Garantindo ao TypeScript que auctionId é sempre string pura (corrige erro TS2322)
   const auctionId = req.params.id as string;
   const bidderId = req.body.bidderId as string;
   const amount = Number(req.body.amount);
 
   try {
+    // HACK DE DESENVOLVIMENTO: Auto-criar o comprador se ele não existir (Evita erro P2003 de Chave Estrangeira)
+    const bidderExists = await prisma.user.findUnique({ where: { id: bidderId } });
+    if (!bidderExists) {
+      await prisma.user.create({
+        data: {
+          id: bidderId,
+          name: 'Comprador Anônimo',
+          email: `${bidderId}@exemplo.com`,
+          password: 'senha-criptografada-fake'
+        }
+      });
+    }
+
     // 1. Busca o leilão atual
     const auction = await prisma.auction.findUnique({
       where: { id: auctionId }
@@ -65,7 +89,7 @@ export const placeBid = async (req: Request, res: Response) => {
     }
 
     if (amount <= auction.currentPrice) {
-      return res.status(400).json({ error: 'O lance deve ser maior que o preço atual' });
+      return res.status(400).json({ error: 'O lance deve ser obrigatoriamente maior que o preço atual.' });
     }
 
     // 2. Anti-Sniper: Se faltam menos de 30 segundos, adiciona 30s extras
@@ -100,7 +124,6 @@ export const placeBid = async (req: Request, res: Response) => {
     }
 
     // 6. Joga na fila do BullMQ
-    // (O TypeScript agora reconhecerá a propriedade bid.bidder devidamente mapeada)
     await aiQueue.add('generate-hype', { 
       auctionId, 
       currentBid: amount, 
@@ -109,7 +132,6 @@ export const placeBid = async (req: Request, res: Response) => {
 
     return res.status(200).json({ success: true, bid, auction: updatedAuction });
   } catch (error: any) {
-    // Mantido como 'any' local apenas para checar o código de erro nativo do Prisma
     if (error?.code === 'P2025') {
       return res.status(409).json({ 
         error: 'Conflito de concorrência: Um lance maior foi computado no mesmo milissegundo. Atualize e tente novamente.' 
