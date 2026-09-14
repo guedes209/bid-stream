@@ -46,11 +46,6 @@ export default function AuctionRoomPage() {
   const [bidError, setBidError] = useState<string>('');
   
   const socketRef = useRef<Socket | null>(null);
-  const chatEndRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [events]);
 
   useEffect(() => {
     const stored = localStorage.getItem('user');
@@ -73,14 +68,14 @@ export default function AuctionRoomPage() {
         if (currentAuction) {
           setAuction(currentAuction);
           
-          // PHASE 2: History Hydration (Gráfico e Chat)
           const historyBids = currentAuction.bids || [];
+          
           const historyEvents = historyBids.map((b: any) => ({
             id: b.id,
             message: `Lance registrado: R$ ${b.amount.toLocaleString('pt-BR')} (${b.bidder.name})`,
             timestamp: new Date(b.createdAt),
             isAi: false
-          }));
+          })).reverse().slice(0, 20);
 
           const initialChart = [{ time: 'Início', price: currentAuction.startingPrice }];
           historyBids.forEach((b: any) => {
@@ -91,9 +86,8 @@ export default function AuctionRoomPage() {
           });
 
           setEvents(historyEvents);
-          setChartData(initialChart.slice(-20)); // Limita aos últimos 20 pontos
+          setChartData(initialChart.slice(-20));
           
-          // Setup WebSocket
           socket = io(API_URL);
           socketRef.current = socket;
           socket.emit('joinAuction', currentAuction.id);
@@ -107,30 +101,28 @@ export default function AuctionRoomPage() {
             }]);
             
             setEvents(prev => {
-              // PHASE 2: Strict Deduplication baseada em IDs reais
               if (prev.some(ev => ev.id === payload.bid.id)) return prev;
               
-              return [...prev, {
+              return [{
                 id: payload.bid.id,
                 message: `Lance registrado: R$ ${payload.bid.amount.toLocaleString('pt-BR')} (${payload.bid.bidder.name})`,
                 timestamp: new Date(),
                 isAi: false
-              }];
+              }, ...prev].slice(0, 20);
             });
           };
 
           const onAuctioneerMessage = (payload: any) => {
             setEvents(prev => {
-              // O AI Payload não tem ID de banco, então criamos um composite key estrito
               const aiId = `ai-${payload.timestamp}-${payload.message.substring(0,10)}`;
               if (prev.some(ev => ev.id === aiId)) return prev;
 
-              return [...prev, {
+              return [{
                 id: aiId,
                 message: payload.message,
                 timestamp: new Date(payload.timestamp),
                 isAi: true
-              }];
+              }, ...prev].slice(0, 20);
             });
           };
 
@@ -226,7 +218,7 @@ export default function AuctionRoomPage() {
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-12">
         {/* === LADO ESQUERDO === */}
         <div className="lg:col-span-7 flex flex-col gap-8">
-          <div className="aspect-[4/3] bg-white border border-[#E5E5E5] p-8 flex items-center justify-center shadow-sm relative overflow-hidden">
+          <div className="aspect-[4/3] bg-white border border-[#E5E5E5] p-8 flex items-center justify-center shadow-sm relative overflow-hidden shrink-0">
             <div className="absolute inset-0 bg-gradient-to-tr from-transparent via-transparent to-[#F9F9F9]"></div>
             <img 
               src={auction.title.includes('Rolex') 
@@ -245,7 +237,7 @@ export default function AuctionRoomPage() {
             <p className="text-[#666666] leading-relaxed text-base">{auction.description}</p>
           </div>
 
-          {/* Painel Principal de Lances */}
+          {/* Painel Principal de Lances (Com mt-4 para ficar colado no texto) */}
           <div className="bg-[#111111] text-[#FAF9F6] p-8 rounded-sm shadow-2xl mt-4 relative overflow-hidden">
             <div className="absolute top-0 right-0 w-32 h-32 bg-[#D4AF37]/10 blur-3xl rounded-full"></div>
             
@@ -291,57 +283,59 @@ export default function AuctionRoomPage() {
         </div>
 
         {/* === LADO DIREITO: GRÁFICOS E CHAT === */}
-        <div className="lg:col-span-5 flex flex-col gap-8 h-full">
-          <div className="bg-white border border-[#E5E5E5] p-6 shadow-sm">
-            <h3 className="text-xs font-bold tracking-widest text-[#999] uppercase mb-6 flex items-center gap-2">
-              <TrendingUp size={14} className="text-[#D4AF37]" /> Curva de Preço (Real-Time)
-            </h3>
-            <div className="h-56 w-full">
-              <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={chartData}>
-                  <defs>
-                    <linearGradient id="colorPrice" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#D4AF37" stopOpacity={0.4}/>
-                      <stop offset="95%" stopColor="#D4AF37" stopOpacity={0}/>
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#F0F0F0" />
-                  <XAxis dataKey="time" tick={{ fontSize: 10, fill: '#A3A3A3' }} axisLine={false} tickLine={false} />
-                  <YAxis domain={['dataMin - 500', 'auto']} tick={{ fontSize: 10, fill: '#A3A3A3' }} axisLine={false} tickLine={false} tickFormatter={(val) => `R$${(val/1000).toFixed(1)}k`} width={50} />
-                  <Tooltip contentStyle={{ backgroundColor: '#111', borderColor: '#333', color: '#fff' }} itemStyle={{ color: '#D4AF37' }} />
-                  <Area type="stepAfter" dataKey="price" stroke="#D4AF37" strokeWidth={2} fillOpacity={1} fill="url(#colorPrice)" isAnimationActive={false} />
-                </AreaChart>
-              </ResponsiveContainer>
+        <div className="lg:col-span-5 relative h-[700px] lg:h-auto">
+          {/* Truque Absolute: O Feed obedece cegamente a altura do lado esquerdo no Desktop */}
+          <div className="lg:absolute lg:inset-0 flex flex-col gap-8 h-full w-full">
+            <div className="bg-white border border-[#E5E5E5] p-6 shadow-sm shrink-0">
+              <h3 className="text-xs font-bold tracking-widest text-[#999] uppercase mb-6 flex items-center gap-2">
+                <TrendingUp size={14} className="text-[#D4AF37]" /> Curva de Preço (Real-Time)
+              </h3>
+              <div className="h-56 w-full">
+                <ResponsiveContainer width="100%" height="100%">
+                  <AreaChart data={chartData}>
+                    <defs>
+                      <linearGradient id="colorPrice" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="#D4AF37" stopOpacity={0.4}/>
+                        <stop offset="95%" stopColor="#D4AF37" stopOpacity={0}/>
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#F0F0F0" />
+                    <XAxis dataKey="time" tick={{ fontSize: 10, fill: '#A3A3A3' }} axisLine={false} tickLine={false} />
+                    <YAxis domain={['dataMin - 500', 'auto']} tick={{ fontSize: 10, fill: '#A3A3A3' }} axisLine={false} tickLine={false} tickFormatter={(val) => `R$${(val/1000).toFixed(1)}k`} width={50} />
+                    <Tooltip contentStyle={{ backgroundColor: '#111', borderColor: '#333', color: '#fff' }} itemStyle={{ color: '#D4AF37' }} />
+                    <Area type="stepAfter" dataKey="price" stroke="#D4AF37" strokeWidth={2} fillOpacity={1} fill="url(#colorPrice)" isAnimationActive={false} />
+                  </AreaChart>
+                </ResponsiveContainer>
+              </div>
             </div>
-          </div>
 
-          <div className="bg-white border border-[#E5E5E5] flex flex-col flex-1 shadow-sm min-h-[450px]">
-            <div className="p-5 border-b border-[#E5E5E5] flex justify-between items-center bg-[#FAFAFA]">
-              <h3 className="text-xs font-bold tracking-widest text-[#111111] uppercase">Activity Feed</h3>
-              <span className="text-xs font-semibold text-[#666] flex items-center gap-2">
-                Logado como: {currentUser.name.split(' ')[0]} <span className="inline-block w-2 h-2 bg-green-500 rounded-full animate-pulse shadow-[0_0_5px_rgba(34,197,94,0.6)]"></span>
-              </span>
-            </div>
-            
-            <div className="p-6 flex-1 overflow-y-auto flex flex-col gap-5 bg-[#FDFDFC]">
-              {events.length === 0 ? (
-                <div className="flex-1 flex items-center justify-center opacity-50 flex-col gap-2">
-                  <Clock size={24} className="text-[#D4AF37]" />
-                  <p className="text-center text-[#999] text-sm italic font-[family-name:var(--font-playfair)]">Aguardando a abertura dos lances...</p>
-                </div>
-              ) : (
-                events.map(ev => (
-                  <div key={ev.id} className={`flex flex-col ${ev.isAi ? 'items-end' : 'items-start'} animate-in slide-in-from-bottom-2 fade-in duration-300`}>
-                    <div className={`px-4 py-3 max-w-[85%] rounded-sm ${ev.isAi ? 'bg-[#111111] text-[#D4AF37] shadow-lg border border-[#333]' : 'bg-white text-[#333] border border-[#E5E5E5] shadow-sm'}`}>
-                      <p className={`text-sm ${ev.isAi ? 'font-medium font-[family-name:var(--font-playfair)] text-base' : ''}`}>{ev.message}</p>
-                    </div>
-                    <span className="text-[10px] text-[#A3A3A3] mt-1.5 uppercase tracking-wider flex items-center gap-1 font-semibold">
-                      {ev.isAi ? '🎙️ Leiloeiro (IA)' : <><User size={10}/> Participante</>} • {format(new Date(ev.timestamp), 'HH:mm:ss')}
-                    </span>
+            <div className="bg-white border border-[#E5E5E5] flex flex-col flex-1 min-h-0 shadow-sm">
+              <div className="p-5 border-b border-[#E5E5E5] flex justify-between items-center bg-[#FAFAFA]">
+                <h3 className="text-xs font-bold tracking-widest text-[#111111] uppercase">Activity Feed</h3>
+                <span className="text-xs font-semibold text-[#666] flex items-center gap-2">
+                  Logado como: {currentUser.name.split(' ')[0]} <span className="inline-block w-2 h-2 bg-green-500 rounded-full animate-pulse shadow-[0_0_5px_rgba(34,197,94,0.6)]"></span>
+                </span>
+              </div>
+              
+              <div className="p-6 overflow-y-auto flex-1 min-h-0 flex flex-col gap-5 bg-[#FDFDFC] [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-track]:bg-[#F9F9F9] [&::-webkit-scrollbar-thumb]:bg-[#D4AF37]">
+                {events.length === 0 ? (
+                  <div className="flex-1 flex items-center justify-center opacity-50 flex-col gap-2">
+                    <Clock size={24} className="text-[#D4AF37]" />
+                    <p className="text-center text-[#999] text-sm italic font-[family-name:var(--font-playfair)]">Aguardando a abertura dos lances...</p>
                   </div>
-                ))
-              )}
-              <div ref={chatEndRef} />
+                ) : (
+                  events.map((ev, index) => (
+                    <div key={ev.id} className={`flex flex-col ${ev.isAi ? 'items-end' : 'items-start'} animate-in slide-in-from-top-2 fade-in duration-300`}>
+                      <div className={`px-4 py-3 max-w-[85%] rounded-sm ${ev.isAi ? 'bg-[#111111] text-[#D4AF37] shadow-lg border border-[#333]' : index === 0 ? 'bg-white border-l-2 border-[#D4AF37] text-[#111] shadow-md font-semibold' : 'bg-white text-[#333] border border-[#E5E5E5] shadow-sm'}`}>
+                        <p className={`text-sm ${ev.isAi ? 'font-medium font-[family-name:var(--font-playfair)] text-base' : ''}`}>{ev.message}</p>
+                      </div>
+                      <span className="text-[10px] text-[#A3A3A3] mt-1.5 uppercase tracking-wider flex items-center gap-1 font-semibold">
+                        {ev.isAi ? '🎙️ Leiloeiro (IA)' : <><User size={10}/> Participante</>} • {format(new Date(ev.timestamp), 'HH:mm:ss')}
+                      </span>
+                    </div>
+                  ))
+                )}
+              </div>
             </div>
           </div>
         </div>
