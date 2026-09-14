@@ -5,7 +5,7 @@ export const generateListingInfo = async (base64Image: string, mimeType: string,
     if (!apiKey) throw new Error('GEMINI_API_KEY is not set');
 
     const genAI = new GoogleGenerativeAI(apiKey);
-    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+    const model = genAI.getGenerativeModel({ model: "gemini-3.7-flash" });
     
     const prompt = `Você é um especialista em leilões e copywriting.
 Analise a imagem deste item que será leiloado.
@@ -19,19 +19,30 @@ Responda ESTRITAMENTE neste formato JSON (sem blocos de markdown de formatação
     "startingPrice": 150.00
 }`;
 
-    const imageParts = [{
-        inlineData: { data: base64Image, mimeType }
-    }];
-
-    const result = await model.generateContent([prompt, ...imageParts]);
-    const response = await result.response;
-    const text = response.text();
-    
     try {
+        const imageParts = [{
+            inlineData: { data: base64Image, mimeType }
+        }];
+
+        // Tempo máximo de tolerância para gerar o lote: 5 segundos
+        const timeoutPromise = new Promise((_, reject) => 
+            setTimeout(() => reject(new Error('TIMEOUT_API')), 5000)
+        );
+
+        const result = await Promise.race([
+            model.generateContent([prompt, ...imageParts]),
+            timeoutPromise
+        ]) as any;
+
+        const text = result.response.text();
         return JSON.parse(text.replace(/```json/g, '').replace(/```/g, '').trim());
-    } catch (e) {
-        console.error("Falha ao fazer parse do JSON", text);
-        throw new Error("Resposta da IA inválida");
+    } catch (e: any) {
+        console.error("[AI Fallback] Erro ou lentidão ao conectar com Gemini para Listing:", e.message);
+        return {
+            title: "Lote Exclusivo (Auto-Generated)",
+            description: "Devido a uma alta demanda temporária nos servidores da IA, esta descrição padrão foi acionada para não bloquear a criação do seu leilão. " + (hint || ""),
+            startingPrice: 5000.00
+        };
     }
 }
 
@@ -40,7 +51,7 @@ export const generateHypeMessage = async (currentBid: number, bidderName: string
     if (!apiKey) throw new Error('GEMINI_API_KEY is not set');
 
     const genAI = new GoogleGenerativeAI(apiKey);
-    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+    const model = genAI.getGenerativeModel({ model: "gemini-3.7-flash" });
 
     const prompt = `Você é um leiloeiro virtual carismático, empolgado e enérgico (mas seja super conciso, use no máximo 1 frase curta). 
 Um lance acabou de ser feito por ${bidderName} no valor de R$${currentBid}. 
@@ -49,6 +60,27 @@ Exemplos de tom: "Incrível! ${bidderName} jogou duro com R$${currentBid}! Algu�
 
 Responda APENAS com a frase final que será enviada no chat, sem aspas, sem formatação e sem explicações.`;
 
-    const result = await model.generateContent(prompt);
-    return result.response.text().trim();
+    try {
+        // Em tempo real, a paciência é zero: Tolerância máxima de 2.5 segundos!
+        const timeoutPromise = new Promise((_, reject) => 
+            setTimeout(() => reject(new Error('TIMEOUT_API')), 2500)
+        );
+
+        const result = await Promise.race([
+            model.generateContent(prompt),
+            timeoutPromise
+        ]) as any;
+        
+        return result.response.text().trim();
+    } catch (e: any) {
+        console.error(`[AI Fallback] API lenta ou offline (${e.message}), acionando fallback rápido!`);
+        
+        const fallbacks = [
+            `Incrível! ${bidderName} jogou duro com R$ ${currentBid.toLocaleString('pt-BR')}! Alguém tem coragem de cobrir?`,
+            `Wow! R$ ${currentBid.toLocaleString('pt-BR')} na mesa por ${bidderName}! Dou-lhe uma...`,
+            `A temperatura subiu! ${bidderName} não está para brincadeira com R$ ${currentBid.toLocaleString('pt-BR')}!`,
+            `Temos um novo líder! ${bidderName} cravou R$ ${currentBid.toLocaleString('pt-BR')}. Quem dá mais?`
+        ];
+        return fallbacks[Math.floor(Math.random() * fallbacks.length)];
+    }
 };
