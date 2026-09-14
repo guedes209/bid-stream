@@ -19,6 +19,17 @@ export default function CreateAuctionPage() {
   const [startingPrice, setStartingPrice] = useState<number | ''>('');
   const [endsAt, setEndsAt] = useState('');
 
+  const [currentUser, setCurrentUser] = useState<{ id: string; name: string } | null>(null);
+
+  React.useEffect(() => {
+    const stored = localStorage.getItem('user');
+    if (!stored) {
+      router.push('/login');
+    } else {
+      setCurrentUser(JSON.parse(stored));
+    }
+  }, [router]);
+
   const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -66,7 +77,30 @@ export default function CreateAuctionPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    alert('Os dados estão prontos! A submissão e gravação real no banco de dados serão conectadas na Fase 3.');
+    if (!currentUser) return;
+    
+    try {
+      const res = await fetch(`${API_URL}/api/auctions`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          sellerId: currentUser.id,
+          title,
+          description,
+          startingPrice: Number(startingPrice),
+          endsAt: new Date(endsAt).toISOString()
+        })
+      });
+
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || 'Erro ao criar leilão');
+      }
+
+      router.push('/');
+    } catch (err: any) {
+      setError(err.message);
+    }
   };
 
   return (
