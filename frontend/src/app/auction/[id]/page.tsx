@@ -7,7 +7,7 @@ import { Clock, TrendingUp, Gavel, User, AlertCircle, ArrowLeft } from 'lucide-r
 import { format } from 'date-fns';
 import { useParams, useRouter } from 'next/navigation';
 
-const API_URL = 'http://localhost:3001';
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
 
 interface Auction {
   id: string;

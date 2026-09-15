@@ -4,7 +4,7 @@ import React, { useState, useRef } from 'react';
 import { Upload, Sparkles, AlertCircle, ArrowLeft, Image as ImageIcon } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 
-const API_URL = 'http://localhost:3001';
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
 
 export default function CreateAuctionPage() {
   const router = useRouter();
