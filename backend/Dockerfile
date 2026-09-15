@@ -1,5 +1,8 @@
-# Imagem base oficial do Node.js (versão Alpine é ultraleve e segura)
-FROM node:20-alpine
+# Imagem base oficial do Node.js (usando slim para compatibilidade nativa com Prisma/OpenSSL)
+FROM node:20-slim
+
+# Instala o OpenSSL, requisito fundamental para o Prisma Client funcionar no Linux
+RUN apt-get update -y && apt-get install -y openssl
 
 # Cria o diretório de trabalho dentro do servidor
 WORKDIR /app
