@@ -1,0 +1,7 @@
+# Ignorar pastas gigantes e segredos de ambiente para não pesar o deploy
+node_modules
+dist
+.env
+.git
+*.log
+
